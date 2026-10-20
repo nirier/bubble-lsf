@@ -4,12 +4,16 @@
 
 ## 安装与启动
 
-需要 Go 1.27.1 或更新版本，以及已配置好的 LSF 客户端环境。启动前加载集群提供的环境脚本，确保 `bhosts` 和 `bjobs` 位于 `PATH` 中。
+需要已配置好的 LSF 客户端环境。启动前加载集群提供的环境脚本，确保 `bhosts` 和 `bjobs` 位于 `PATH` 中。
+
+从 [Releases](https://github.com/nirier/bubble-lsf/releases) 下载对应平台的压缩包，或用 Go 1.27.1 及以上从源码构建：
 
 ```sh
 go build -o bubble-lsf .
 ./bubble-lsf
 ```
+
+`./bubble-lsf -version` 打印构建版本。
 
 也可以使用 `go run .`。`./bubble-lsf -h` 查看帮助，无须连接集群。终端至少为 **76 列 × 22 行**。
 

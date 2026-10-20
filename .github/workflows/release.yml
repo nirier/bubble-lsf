@@ -1,0 +1,67 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
+          - os: windows
+            arch: arm64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          ext=""
+          [ "$GOOS" = windows ] && ext=".exe"
+          name="bubble-lsf-${GOOS}-${GOARCH}${ext}"
+          go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o "$name" .
+          # ponytail: only the native linux/amd64 binary runs here; other GOOS/GOARCH are cross-compiled.
+          [ "$GOOS-$GOARCH" = linux-amd64 ] && "./$name" -version
+          if [ "$GOOS" = windows ]; then
+            zip "${name}.zip" "$name"
+          else
+            tar -czf "${name}.tar.gz" "$name"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bubble-lsf-${{ matrix.os }}-${{ matrix.arch }}
+          path: bubble-lsf-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: checksums
+        run: cd dist && sha256sum * > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

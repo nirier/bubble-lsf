@@ -15,7 +15,7 @@
 
 ## 开发命令
 
-Go 模块为 `bubble-lsf`，Go 版本要求见 `go.mod`（当前 1.27.1）。入口位于仓库根目录，不引入额外构建工具或 lint 框架。
+Go 模块为 `bubble-lsf`，Go 版本要求见 `go.mod`（当前 1.27.1）。入口位于仓库根目录，不引入额外构建工具或 lint 框架。推送 `v*` tag 时 `.github/workflows/release.yml` 交叉编译 linux/darwin/windows 的 amd64 与 arm64，并附带 SHA256SUMS 发布到 GitHub Release。版本由 `-ldflags -X main.version` 注入，本地构建为 `dev`。
 
 ```sh
 go run .
