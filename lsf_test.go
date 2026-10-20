@@ -125,6 +125,27 @@ func TestTargets(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(cmd.Args, []string{"ssh", "--", "compute-01.example.test"}) {
 		t.Fatalf("SSH command=%v err=%v", cmd, err)
 	}
+	detail := "Job <42>, User <user>\nStarted on compute-01.example.test, Execution CWD </home/user/src>\nCWD </home/user/src/job dir>\n"
+	dir, err := jobCWD(detail)
+	if err != nil || dir != "/home/user/src/job dir" || jobHostFromDetail(detail) != "compute-01.example.test" {
+		t.Fatalf("dir=%q host=%q err=%v", dir, jobHostFromDetail(detail), err)
+	}
+	cmd, err = sshCommandDir("compute-01.example.test", dir)
+	if err != nil || !reflect.DeepEqual(cmd.Args, []string{"ssh", "-t", "--", "compute-01.example.test", "cd '/home/user/src/job dir' && exec ${SHELL:-/bin/sh} -l"}) {
+		t.Fatalf("dir SSH=%v err=%v", cmd.Args, err)
+	}
+	if _, err := jobCWD("no cwd here"); err == nil {
+		t.Fatal("accepted detail without CWD")
+	}
+	if _, err := jobCWD("CWD <relative>"); err == nil {
+		t.Fatal("accepted relative CWD")
+	}
+	if _, err := sshCommandDir("compute-01", "relative"); err == nil {
+		t.Fatal("accepted relative ssh dir")
+	}
+	if _, err := sshCommandDir("compute-01", "/tmp/a\nb"); err == nil {
+		t.Fatal("accepted ssh dir with newline")
+	}
 }
 
 func TestSubmitLiteralArguments(t *testing.T) {

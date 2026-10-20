@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -250,10 +251,48 @@ func hostAction(name, action string) (commandSpec, error) {
 }
 
 func sshCommand(name string) (*exec.Cmd, error) {
+	return sshCommandDir(name, "")
+}
+
+func jobHostFromDetail(detail string) string {
+	for _, line := range strings.Split(detail, "\n") {
+		line = strings.TrimSpace(line)
+		if host, ok := strings.CutPrefix(line, "Started on "); ok {
+			host, _, _ = strings.Cut(host, " ")
+			return strings.Trim(host, "<>,")
+		}
+	}
+	return ""
+}
+
+func jobCWD(detail string) (string, error) {
+	for _, line := range strings.Split(detail, "\n") {
+		line = strings.TrimSpace(line)
+		dir, ok := strings.CutPrefix(line, "CWD <")
+		if !ok {
+			continue
+		}
+		dir, ok = strings.CutSuffix(dir, ">")
+		if !ok || dir == "" || !path.IsAbs(dir) || strings.ContainsFunc(dir, unicode.IsControl) {
+			return "", fmt.Errorf("无法识别作业目录 %q", line)
+		}
+		return dir, nil
+	}
+	return "", errors.New("作业详情没有 CWD，无法进入源目录")
+}
+
+func sshCommandDir(name, dir string) (*exec.Cmd, error) {
 	if err := validateHost(name); err != nil {
 		return nil, err
 	}
-	return exec.Command("ssh", "--", name), nil
+	if dir == "" {
+		return exec.Command("ssh", "--", name), nil
+	}
+	if !path.IsAbs(dir) || strings.ContainsFunc(dir, unicode.IsControl) {
+		return nil, fmt.Errorf("拒绝进入非绝对路径 %q", dir)
+	}
+	// Remote login shell cds before the interactive shell. Quote so the path is literal.
+	return exec.Command("ssh", "-t", "--", name, "cd "+shellQuote(dir)+" && exec ${SHELL:-/bin/sh} -l"), nil
 }
 
 type submission struct {

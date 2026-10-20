@@ -209,6 +209,31 @@ func TestJobActionConfirmsOnceAndPeekDoesNotConfirm(t *testing.T) {
 	}
 }
 
+func TestSSHJobDirUsesCWDAndFirstHost(t *testing.T) {
+	fakeCommands(t, map[string]string{
+		"bjobs": "printf '%s\\n' 'Job <42>' 'Started on compute-02.example.test' 'CWD </home/user/src>'",
+	})
+	m := newModel(context.Background())
+	m.Update(tea.KeyPressMsg{Code: '2'})
+	m.Update(listMsg{request: m.request, pane: jobsPane, jobs: []job{{id: "42", status: "RUN", host: "compute-01"}}})
+	cmd := press(m, 's')
+	if cmd == nil || m.screen != workingScreen {
+		t.Fatal("s did not look up the job directory")
+	}
+	msg := cmd().(jobDirMsg)
+	if msg.err != nil || msg.host != "compute-02.example.test" || msg.dir != "/home/user/src" || msg.request != m.request {
+		t.Fatalf("lookup %+v", msg)
+	}
+	m.Update(msg)
+	if m.screen != browseScreen {
+		t.Fatal("successful lookup did not hand off to ssh")
+	}
+	m.Update(jobDirMsg{request: m.request - 1, err: errors.New("older")})
+	if m.screen != browseScreen {
+		t.Fatal("stale directory result changed the screen")
+	}
+}
+
 func TestSmallTerminalBlocksConfirmation(t *testing.T) {
 	m := loadedModel(t)
 	press(m, 'c')

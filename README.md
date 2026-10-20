@@ -48,6 +48,7 @@ go build -o bubble-lsf .
 | 列表 | `?` | 查看资源类型、说明和元数据；此页 `r` 重读资源目录 |
 | 过滤 / 资源编辑 | `Tab`、`↑` / `↓` | 插入补全；选择候选；`Enter` 应用，`Esc` 取消 |
 | Jobs | `h` | 切换 Hosts，选择所选作业的执行主机（含并行作业） |
+| Jobs / 作业详情 | `s` | SSH 到执行主机并进入 `bjobs -l` 的 `CWD`；没有执行主机或目录则不登录 |
 | Jobs | `x` / `u` / `v` | 预览后确认执行 `bkill` / `bstop` / `bresume`；取消不执行 |
 | Jobs / 作业详情 | `e` | 读取 `bpeek` 输出，只读，不需要确认 |
 | Hosts | `←` / `→` | 横向滚动，查看其他列 |
@@ -169,7 +170,7 @@ bjobs -a -noheader -o "jobid user stat queue exec_host job_name submit_time deli
 
 原生资源筛选给主机查询增加 `-R`；Jobs 资源筛选在 `bjobs` 后额外查询 `bhosts -w -R`。资源目录独立查询，有自己的取消 context 和请求标识；切换列表不会重读目录。资源表达式的 LSF 报错会显示在查询失败页，不会当作没有匹配结果。
 
-SSH 使用系统 `ssh -- HOST`，沿用现有主机密钥检查。登录失败时，请先在终端检查相同主机的 SSH 连接。
+SSH 使用系统 `ssh -- HOST`，沿用现有主机密钥检查。Jobs 的 `s` 额外执行 `cd` 到该作业的绝对 `CWD`，再启动登录 shell；路径按字面值引用，不展开变量。多执行主机时登录 `Started on` 的第一台。登录失败时，请先在终端检查相同主机的 SSH 连接。
 
 ## 开发与验证
 

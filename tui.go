@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -52,6 +53,13 @@ type actionMsg struct {
 }
 
 type sshMsg struct{ err error }
+
+type jobDirMsg struct {
+	request int
+	host    string
+	dir     string
+	err     error
+}
 
 type model struct {
 	ctx             context.Context
@@ -355,6 +363,32 @@ func (m *model) updateFilter(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
+func (m *model) sshJobDir(id string) tea.Cmd {
+	if err := validateJobID(id); err != nil {
+		m.status = err.Error()
+		return nil
+	}
+	ctx, request := m.beginQuery()
+	m.screen = workingScreen
+	m.title = "读取作业目录"
+	m.status = "从 bjobs -l 的 CWD 确定源目录，不会猜测路径"
+	return func() tea.Msg {
+		text, err := jobDetails(ctx, id)
+		if err != nil {
+			return jobDirMsg{request: request, err: err}
+		}
+		dir, err := jobCWD(text)
+		if err != nil {
+			return jobDirMsg{request: request, err: err}
+		}
+		names := executionHosts(jobHostFromDetail(text))
+		if len(names) == 0 {
+			return jobDirMsg{request: request, err: errors.New("作业尚未分配执行主机，无法 SSH")}
+		}
+		return jobDirMsg{request: request, host: names[0], dir: dir}
+	}
+}
+
 func (m *model) runOnce(spec commandSpec, title string) tea.Cmd {
 	m.stopQuery()
 	m.screen = workingScreen
@@ -450,6 +484,24 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.status = "Esc 返回后按 r 刷新；不会自动重复操作"
 		return m, nil
+	case jobDirMsg:
+		if msg.request != m.request || m.screen != workingScreen {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.screen = detailScreen
+			m.showText("无法进入源目录", msg.err.Error())
+			m.status = "Esc 返回 · r 刷新列表"
+			return m, nil
+		}
+		cmd, err := sshCommandDir(msg.host, msg.dir)
+		if err != nil {
+			m.screen = detailScreen
+			m.showText("无法进入源目录", err.Error())
+			return m, nil
+		}
+		m.screen = browseScreen
+		return m, tea.ExecProcess(cmd, func(err error) tea.Msg { return sshMsg{err} })
 	case sshMsg:
 		if msg.err != nil {
 			m.screen = detailScreen
@@ -511,6 +563,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.loadDetails(m.detailTarget)
 				}
 				return m, m.refresh()
+			}
+			if m.pane == jobsPane && m.detailTarget != "" && key == "s" {
+				return m, m.sshJobDir(m.detailTarget)
 			}
 			if m.pane == jobsPane && m.detailTarget != "" && key == "e" {
 				spec, err := jobPeek(m.detailTarget)
@@ -595,6 +650,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					title := map[string]string{"x": "终止作业", "u": "挂起作业", "v": "恢复作业"}[key]
 					m.confirm(spec, title, browseScreen)
 					return m, nil
+				}
+			case "s":
+				if m.pane == jobsPane && m.selectedID() != "" {
+					return m, m.sshJobDir(m.selectedID())
 				}
 			case "e":
 				if m.pane == jobsPane && m.selectedID() != "" {
@@ -774,7 +833,7 @@ func (m *model) View() tea.View {
 		if m.pane == hostsPane {
 			help = "/ 过滤 · R 资源 · ? 说明 · ←/→ 滚动 · Enter 详情\nj/k 上下 · s SSH · n 提交 · o/c 开放/关闭 · Tab 切换 · r 刷新 · q 退出"
 		} else {
-			help = "/ 过滤 · R 资源 · h 执行主机 · x/u/v 终止/挂起/恢复 · e 输出\nj/k 上下 · Tab 切换 · r 刷新 · q 退出"
+			help = "/ 过滤 · R 资源 · h 执行主机 · s 源目录 · e 输出\nx/u/v 终止/挂起/恢复 · j/k 上下 · Tab 切换 · r 刷新 · q 退出"
 		}
 		if m.filtering {
 			body = m.filterEditorView()
@@ -799,7 +858,7 @@ func (m *model) View() tea.View {
 		body = accent.Render(m.title) + "\n" + m.viewport.View()
 		help = "↑/↓ / PgUp / PgDn 滚动 · r 刷新 · Esc 返回 · q 退出"
 		if m.pane == jobsPane && m.detailTarget != "" && m.screen == detailScreen {
-			help = "↑/↓ 滚动 · e 查看输出 · r 重新读取 · Esc 返回 · q 退出"
+			help = "↑/↓ 滚动 · s 进入源目录 · e 查看输出 · r 重新读取 · Esc 返回 · q 退出"
 		}
 		if m.screen == confirmScreen {
 			help = "y 执行一次 · n / Esc 取消 · ↑/↓ 滚动预览"

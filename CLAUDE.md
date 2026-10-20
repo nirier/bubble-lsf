@@ -8,7 +8,7 @@
 - 当前用户的 job 列表（含提交时间）和 `bjobs -l` 详情；`x`/`u`/`v` 确认后执行 `bkill`/`bstop`/`bresume`，`e` 读取 `bpeek`。
 - `lsinfo -r -l` 资源描述符目录和说明，按类型补全自定义资源；`R` 原生 select 筛选 Hosts 及执行主机匹配的 Jobs；Jobs 本地字段过滤及 Jobs 跳转执行主机；j/k 仅上下移动。
 - 指定单个目标 host 的提交表单，支持 queue、job name、output、error、slots、wall、program 和 JSON 参数数组，确认后调用 `bsub -m`。
-- `bhosts -l`、`lshosts -l`、`lsload -l`、共享资源与拓扑信息机器详情，以及交还终端的交互 SSH 登录。
+- `bhosts -l`、`lshosts -l`、`lsload -l`、共享资源与拓扑信息机器详情，以及交还终端的交互 SSH 登录。Jobs 的 `s` 登录执行主机并进入 `bjobs -l` 的绝对 `CWD`。
 - 查询取消、过期结果隔离、失败重试、刷新保留选中项、最小终端尺寸检查。
 
 使用方式、快捷键及 LSF 输出兼容性见 `README.md`。尚未验证真实集群；不得把本地替身测试视为集群兼容性验证。
