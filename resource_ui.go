@@ -45,7 +45,7 @@ func (m *model) rebuildJobs(selected string) {
 		if !matchesJob(j, m.jobFilters) {
 			continue
 		}
-		row := table.Row{j.id, j.user, j.status, j.queue, j.host, j.name}
+		row := table.Row{j.id, j.user, j.status, j.queue, j.host, j.submitted, j.name}
 		for i := range row {
 			row[i] = safeText(row[i])
 		}
@@ -102,7 +102,7 @@ func (m *model) completionData(native bool) (map[string][]string, map[string]str
 	if m.pane == jobsPane {
 		values = make(map[string][]string)
 		for _, j := range m.jobs {
-			for _, field := range []string{"id", "jobid", "user", "status", "stat", "queue", "name", "job_name"} {
+			for _, field := range []string{"id", "jobid", "user", "status", "stat", "queue", "name", "job_name", "submit", "submit_time"} {
 				value, _ := jobField(j, field)
 				add(field, value)
 			}

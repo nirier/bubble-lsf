@@ -21,6 +21,8 @@ func jobField(j job, field string) (string, bool) {
 		return j.host, true
 	case "name", "job_name":
 		return j.name, true
+	case "submit", "submit_time", "submitted":
+		return j.submitted, true
 	}
 	return "", false
 }
@@ -38,13 +40,13 @@ func compileJobFilter(query string) ([]jobPredicate, error) {
 				return nil, fmt.Errorf("无效过滤条件 %q", term)
 			}
 			result = append(result, func(j job) bool {
-				return strings.Contains(strings.ToLower(strings.Join([]string{j.id, j.user, j.status, j.queue, j.host, j.name}, " ")), term)
+				return strings.Contains(strings.ToLower(strings.Join([]string{j.id, j.user, j.status, j.queue, j.host, j.name, j.submitted}, " ")), term)
 			})
 			continue
 		}
 		field, op, value := match[1], match[2], match[3]
 		if _, ok := jobField(job{}, field); !ok {
-			return nil, fmt.Errorf("未知 Jobs 字段 %q；可用 id、user、status、queue、host、name", field)
+			return nil, fmt.Errorf("未知 Jobs 字段 %q；可用 id、user、status、queue、host、name、submit", field)
 		}
 		if op != ":" && op != "=" && op != "!=" {
 			return nil, fmt.Errorf("Jobs 字段支持 : 包含、= 等于、!= 不等于")

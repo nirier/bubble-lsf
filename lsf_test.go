@@ -50,14 +50,14 @@ func TestParseHosts(t *testing.T) {
 }
 
 func TestParseJobs(t *testing.T) {
-	jobs, err := parseJobs("42 | user | RUN | normal | compute-01 | a job | with pipes\n43[2]|user|PEND|normal|-|array task\n")
+	jobs, err := parseJobs("42 | user | RUN | normal | compute-01 | a job | with pipes | Oct 8 10:00\n43[2]|user|PEND|normal|-|array task|Oct 8 10:01\n")
 	if err != nil || len(jobs) != 2 {
 		t.Fatalf("jobs=%v, err=%v", jobs, err)
 	}
-	if jobs[0].name != "a job | with pipes" || jobs[1].id != "43[2]" {
+	if jobs[0].name != "a job|with pipes" || jobs[0].submitted != "Oct 8 10:00" || jobs[1].id != "43[2]" {
 		t.Fatalf("lost name or array index: %+v", jobs)
 	}
-	for _, text := range []string{"unexpected header", "0|u|RUN|q|h|name", "42;bad|u|RUN|q|h|name"} {
+	for _, text := range []string{"unexpected header", "0|u|RUN|q|h|name|t", "42;bad|u|RUN|q|h|name|t", "42|u|RUN|q|h|name"} {
 		if _, err := parseJobs(text); err == nil {
 			t.Errorf("accepted malformed jobs: %q", text)
 		}
@@ -106,6 +106,21 @@ func TestTargets(t *testing.T) {
 	if _, err := hostAction("compute-01", "shutdown"); err == nil {
 		t.Fatal("accepted unimplemented management action")
 	}
+	for _, id := range []string{"0", "42;bad", "all", "-k", ""} {
+		if _, err := jobAction(id, "x"); err == nil {
+			t.Errorf("accepted job action target %q", id)
+		}
+		if _, err := jobPeek(id); err == nil {
+			t.Errorf("accepted peek target %q", id)
+		}
+	}
+	if _, err := jobAction("42", "bmod"); err == nil {
+		t.Fatal("accepted unimplemented job action")
+	}
+	kill, err := jobAction("43[2]", "x")
+	if err != nil || kill.name != "bkill" || kill.args[0] != "43[2]" {
+		t.Fatalf("job action %+v %v", kill, err)
+	}
 	cmd, err := sshCommand("compute-01.example.test")
 	if err != nil || !reflect.DeepEqual(cmd.Args, []string{"ssh", "--", "compute-01.example.test"}) {
 		t.Fatalf("SSH command=%v err=%v", cmd, err)
@@ -118,12 +133,12 @@ func TestSubmitLiteralArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := submission{host: "compute-01", queue: "normal", name: "literal job", output: "logs/job.%J.out", program: "/usr/bin/printf", arguments: string(encoded)}
+	s := submission{host: "compute-01", queue: "normal", name: "literal job", output: "logs/job.%J.out", errorFile: "logs/job.%J.err", slots: "4", wall: "1:00", program: "/usr/bin/printf", arguments: string(encoded)}
 	spec, err := s.command()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"-m", "compute-01", "-q", "normal", "-J", "literal job", "-o", "logs/job.%J.out"}
+	want := []string{"-m", "compute-01", "-q", "normal", "-J", "literal job", "-o", "logs/job.%J.out", "-e", "logs/job.%J.err", "-n", "4", "-W", "1:00"}
 	if spec.name != "bsub" || !reflect.DeepEqual(spec.args, want) {
 		t.Fatalf("incorrect bsub options: %+v", spec)
 	}
@@ -158,6 +173,10 @@ func TestSubmitValidation(t *testing.T) {
 		{host: "compute-01", program: "hostname", arguments: `["\u0000"]`},
 		{host: "compute-01", program: "hostname", queue: "-q"},
 		{host: "compute-01", program: "hostname", output: "-bad"},
+		{host: "compute-01", program: "hostname", slots: "0"},
+		{host: "compute-01", program: "hostname", slots: "4,8"},
+		{host: "compute-01", program: "hostname", wall: "1:60"},
+		{host: "compute-01", program: "hostname", wall: "-30"},
 	} {
 		if _, err := s.command(); err == nil {
 			t.Errorf("accepted unsafe submission: %+v", s)

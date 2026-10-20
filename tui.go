@@ -176,7 +176,7 @@ func (m *model) selectedID() string {
 
 func (m *model) resize() {
 	width := max(20, m.width-4)
-	height := max(3, m.height-9)
+	height := max(3, m.height-10)
 	m.table.SetWidth(width)
 	m.table.SetHeight(height)
 	m.viewport.SetWidth(width)
@@ -202,8 +202,8 @@ func (m *model) resize() {
 	} else {
 		columns = []table.Column{
 			{Title: "JOB ID", Width: 13}, {Title: "USER", Width: 8}, {Title: "STAT", Width: 6},
-			{Title: "QUEUE", Width: 9}, {Title: "EXEC HOST", Width: 14},
-			{Title: "NAME", Width: max(8, width-62)},
+			{Title: "QUEUE", Width: 9}, {Title: "EXEC HOST", Width: 14}, {Title: "SUBMIT", Width: 16},
+			{Title: "NAME", Width: max(8, width-80)},
 		}
 	}
 	m.table.SetColumns(columns)
@@ -355,6 +355,18 @@ func (m *model) updateFilter(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
+func (m *model) runOnce(spec commandSpec, title string) tea.Cmd {
+	m.stopQuery()
+	m.screen = workingScreen
+	m.title = title
+	m.status = "等待命令返回（超时 15 秒）；期间暂停快捷键"
+	ctx := m.ctx
+	return func() tea.Msg {
+		out, err := runLSF(ctx, spec)
+		return actionMsg{out, err}
+	}
+}
+
 func (m *model) confirm(spec commandSpec, title string, returnTo screen) {
 	m.stopQuery()
 	m.pending = &spec
@@ -500,6 +512,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.refresh()
 			}
+			if m.pane == jobsPane && m.detailTarget != "" && key == "e" {
+				spec, err := jobPeek(m.detailTarget)
+				if err != nil {
+					m.status = err.Error()
+					return m, nil
+				}
+				return m, m.runOnce(spec, "作业输出")
+			}
 		case formScreen:
 			return m, m.updateForm(msg)
 		case confirmScreen:
@@ -510,15 +530,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if key == "y" && m.pending != nil {
-				spec, ctx := *m.pending, m.ctx
+				spec := *m.pending
 				m.pending = nil
-				m.screen = workingScreen
-				m.title = "执行中，请勿重复提交"
-				m.status = "等待命令返回（超时 15 秒）；期间暂停快捷键"
-				return m, func() tea.Msg {
-					out, err := runLSF(ctx, spec)
-					return actionMsg{out, err}
-				}
+				return m, m.runOnce(spec, "执行中，请勿重复提交")
 			}
 		case browseScreen:
 			if key == "/" {
@@ -526,7 +540,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "Tab 补全 · ↑/↓ 候选 · Enter 应用 · Esc 取消"
 				return m, m.activeFilterInput().Focus()
 			}
-			if m.pane == hostsPane {
+			if m.pane == hostsPane || m.pane == jobsPane {
 				switch key {
 				case "left", "right":
 					step := 12
@@ -570,6 +584,26 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "h":
 				if m.pane == jobsPane && m.selectedID() != "" {
 					return m, m.showSelectedJobHosts()
+				}
+			case "x", "u", "v":
+				if m.pane == jobsPane && m.selectedID() != "" {
+					spec, err := jobAction(m.selectedID(), key)
+					if err != nil {
+						m.status = err.Error()
+						return m, nil
+					}
+					title := map[string]string{"x": "终止作业", "u": "挂起作业", "v": "恢复作业"}[key]
+					m.confirm(spec, title, browseScreen)
+					return m, nil
+				}
+			case "e":
+				if m.pane == jobsPane && m.selectedID() != "" {
+					spec, err := jobPeek(m.selectedID())
+					if err != nil {
+						m.status = err.Error()
+						return m, nil
+					}
+					return m, m.runOnce(spec, "作业输出")
 				}
 			}
 			if key == "enter" {
@@ -640,7 +674,7 @@ func (m *model) listStatus() string {
 	return status
 }
 
-var formLabels = []string{"Host", "Queue (可选)", "Job name (可选)", "Output (可选)", "Program", "Args (JSON)"}
+var formLabels = []string{"Host", "Queue (可选)", "Job name (可选)", "Output (可选)", "Error (可选)", "Slots (可选)", "Wall (可选)", "Program", "Args (JSON)"}
 
 func (m *model) openForm(host string) tea.Cmd {
 	m.stopQuery()
@@ -652,9 +686,11 @@ func (m *model) openForm(host string) tea.Cmd {
 		m.inputs[i].CharLimit = 4096
 	}
 	m.inputs[0].SetValue(host)
-	m.inputs[4].Placeholder = "/usr/bin/hostname"
-	m.inputs[5].SetValue("[]")
-	m.focus, m.screen = 4, formScreen
+	m.inputs[5].Placeholder = "4"
+	m.inputs[6].Placeholder = "30 或 1:00"
+	m.inputs[7].Placeholder = "/usr/bin/hostname"
+	m.inputs[8].SetValue("[]")
+	m.focus, m.screen = 7, formScreen
 	m.status = "参数示例 [\"--count\", \"10\"]；不展开 $变量、~ 或通配符"
 	m.resize()
 	return m.inputs[m.focus].Focus()
@@ -686,7 +722,8 @@ func (m *model) updateForm(msg tea.KeyPressMsg) tea.Cmd {
 func (m *model) reviewForm() tea.Cmd {
 	s := submission{
 		host: m.inputs[0].Value(), queue: m.inputs[1].Value(), name: m.inputs[2].Value(),
-		output: m.inputs[3].Value(), program: m.inputs[4].Value(), arguments: m.inputs[5].Value(),
+		output: m.inputs[3].Value(), errorFile: m.inputs[4].Value(), slots: strings.TrimSpace(m.inputs[5].Value()),
+		wall: strings.TrimSpace(m.inputs[6].Value()), program: m.inputs[7].Value(), arguments: m.inputs[8].Value(),
 	}
 	spec, err := s.command()
 	if err != nil {
@@ -711,13 +748,11 @@ func (m *model) View() tea.View {
 	switch m.screen {
 	case browseScreen:
 		body = m.table.View()
-		if m.pane == hostsPane {
-			lines := strings.Split(body, "\n")
-			for i := range lines {
-				lines[i] = ansi.Cut(lines[i], m.hostScroll, m.hostScroll+m.width-4)
-			}
-			body = strings.Join(lines, "\n")
+		lines := strings.Split(body, "\n")
+		for i := range lines {
+			lines[i] = ansi.Cut(lines[i], m.hostScroll, m.hostScroll+m.width-4)
 		}
+		body = strings.Join(lines, "\n")
 		if len(m.table.Rows()) == 0 {
 			switch {
 			case m.loading:
@@ -739,7 +774,7 @@ func (m *model) View() tea.View {
 		if m.pane == hostsPane {
 			help = "/ 过滤 · R 资源 · ? 说明 · ←/→ 滚动 · Enter 详情\nj/k 上下 · s SSH · n 提交 · o/c 开放/关闭 · Tab 切换 · r 刷新 · q 退出"
 		} else {
-			help = "/ 过滤 · R 主机资源 · ? 说明 · Enter 详情 · h 执行主机\nj/k / ↑↓ 选择 · Tab 切换 · r 刷新 · q 退出"
+			help = "/ 过滤 · R 资源 · h 执行主机 · x/u/v 终止/挂起/恢复 · e 输出\nj/k 上下 · Tab 切换 · r 刷新 · q 退出"
 		}
 		if m.filtering {
 			body = m.filterEditorView()
@@ -763,13 +798,16 @@ func (m *model) View() tea.View {
 	default:
 		body = accent.Render(m.title) + "\n" + m.viewport.View()
 		help = "↑/↓ / PgUp / PgDn 滚动 · r 刷新 · Esc 返回 · q 退出"
+		if m.pane == jobsPane && m.detailTarget != "" && m.screen == detailScreen {
+			help = "↑/↓ 滚动 · e 查看输出 · r 重新读取 · Esc 返回 · q 退出"
+		}
 		if m.screen == confirmScreen {
 			help = "y 执行一次 · n / Esc 取消 · ↑/↓ 滚动预览"
 		} else if m.screen == workingScreen {
 			help = "等待执行结束；失败或超时不会自动重试"
 		}
 	}
-	body = lipgloss.NewStyle().Height(max(3, m.height-9)).Render(body)
+	body = lipgloss.NewStyle().Height(max(3, m.height-10)).Render(body)
 	status := strings.ReplaceAll(safeText(m.status), "\n", " ")
 	status = ansi.Truncate(status, m.width-4, "…")
 	content := accent.Render("BUBBLE LSF") + "\n" + tabs + "\n\n" + body + "\n" + status + "\n" + help

@@ -80,10 +80,10 @@ func TestSelectionRequirement(t *testing.T) {
 	}
 }
 
-const resourceJobsFixture = `41|user|RUN|normal|compute-01|first
-42|user|RUN|batch|4*compute-01:8*compute-02.example.test|parallel job
-43|user|PEND|normal|-|pending
-44[2]|user|DONE|batch|compute-02.example.test|array job
+const resourceJobsFixture = `41|user|RUN|normal|compute-01|first|Oct 8 10:00
+42|user|RUN|batch|4*compute-01:8*compute-02.example.test|parallel job|Oct 8 10:01
+43|user|PEND|normal|-|pending|Oct 8 10:02
+44[2]|user|DONE|batch|compute-02.example.test|array job|Oct 8 10:03
 `
 
 func TestJobsOnResourceHosts(t *testing.T) {

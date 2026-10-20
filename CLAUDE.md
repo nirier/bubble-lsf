@@ -5,9 +5,9 @@
 本项目使用 Go 和 Bubble Tea v2 开发 IBM LSF 终端交互界面。当前已实现：
 
 - `bhosts` 主机列表，补充全量静态属性、动态负载、自定义 / External / ELIM 资源、调度阈值、主机组和队列；`/` 组合过滤和左右键横向滚动；`badmin hopen` / `hclose` 的预览、确认与执行。
-- 当前用户的 job 列表和 `bjobs -l` 详情。
+- 当前用户的 job 列表（含提交时间）和 `bjobs -l` 详情；`x`/`u`/`v` 确认后执行 `bkill`/`bstop`/`bresume`，`e` 读取 `bpeek`。
 - `lsinfo -r -l` 资源描述符目录和说明，按类型补全自定义资源；`R` 原生 select 筛选 Hosts 及执行主机匹配的 Jobs；Jobs 本地字段过滤及 Jobs 跳转执行主机；j/k 仅上下移动。
-- 指定单个目标 host 的提交表单，支持 queue、job name、output、program 和 JSON 参数数组，确认后调用 `bsub -m`。
+- 指定单个目标 host 的提交表单，支持 queue、job name、output、error、slots、wall、program 和 JSON 参数数组，确认后调用 `bsub -m`。
 - `bhosts -l`、`lshosts -l`、`lsload -l`、共享资源与拓扑信息机器详情，以及交还终端的交互 SSH 登录。
 - 查询取消、过期结果隔离、失败重试、刷新保留选中项、最小终端尺寸检查。
 

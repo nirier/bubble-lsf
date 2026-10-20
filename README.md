@@ -25,6 +25,8 @@ go build -o bubble-lsf .
 | `lsinfo` | 读取集群资源描述符，补全资源名称并展示类型、说明 |
 | `lsload` | 主机动态负载及 External / ELIM 动态共享资源 |
 | `bsub` | 提交作业 |
+| `bkill`、`bstop`、`bresume` | 终止、挂起、恢复所选作业；执行前确认，需要相应权限 |
+| `bpeek` | 查看作业标准输出；通常仅对仍在运行的作业有效 |
 | `badmin` | 开放或关闭主机接收新作业，需要相应权限 |
 | `ssh` | 交互登录主机，沿用本机 SSH 配置和认证 |
 
@@ -46,6 +48,8 @@ go build -o bubble-lsf .
 | 列表 | `?` | 查看资源类型、说明和元数据；此页 `r` 重读资源目录 |
 | 过滤 / 资源编辑 | `Tab`、`↑` / `↓` | 插入补全；选择候选；`Enter` 应用，`Esc` 取消 |
 | Jobs | `h` | 切换 Hosts，选择所选作业的执行主机（含并行作业） |
+| Jobs | `x` / `u` / `v` | 预览后确认执行 `bkill` / `bstop` / `bresume`；取消不执行 |
+| Jobs / 作业详情 | `e` | 读取 `bpeek` 输出，只读，不需要确认 |
 | Hosts | `←` / `→` | 横向滚动，查看其他列 |
 | 详情 | `j` / `k`、`↑` / `↓`、`PgUp` / `PgDn` | 滚动详情 |
 | 详情 | `r` | 重新查询；查询失败页和操作结果页则刷新列表 |
@@ -108,7 +112,7 @@ select[type==any && ncpus>=16 && maxmem>=65536]
 
 在 Jobs 按 `R` 使用同样的条件，程序查询匹配主机并保留**至少一个执行主机符合条件**的作业。支持 `4*hostA:8*hostB` 这样的并行作业；没有执行主机的待调度作业不会匹配。这里比较的是执行主机当前资源，已完成作业也按其主机当前信息匹配。Hosts / Jobs 的资源条件分别保存，刷新和切换页面后保留，且与各自 `/` 本地过滤同时生效。
 
-Jobs 的 `/` 支持 `id`、`user`、`status`、`queue`、`host`、`name` 字段及字段值补全，例如：
+Jobs 列表增加 `SUBMIT` 列。`/` 支持 `id`、`user`、`status`、`queue`、`host`、`name`、`submit` 字段及字段值补全，例如：
 
 ```text
 status=RUN queue:normal host=compute-01
@@ -131,6 +135,9 @@ Jobs 按 `h` 跳到执行主机列表，会替换 Hosts 资源条件并清空 Ho
 | Queue | `normal` | 可选，对应 `-q` |
 | Job name | `example` | 可选，对应 `-J` |
 | Output | `logs/job.%J.out` | 可选，对应 `-o`，路径遵循集群的 LSF 规则 |
+| Error | `logs/job.%J.err` | 可选，对应 `-e` |
+| Slots | `4` | 可选，对应 `-n`，正整数 |
+| Wall | `30` 或 `1:00` | 可选，对应 `-W`，分钟或 `[hour:]minute:second` |
 | Program | `/usr/bin/python3` | 程序名称或执行节点上可用的路径 |
 | Args | `["train.py", "--epochs", "10"]` | JSON 字符串数组，空白或 `[]` 表示无参数 |
 
@@ -153,7 +160,7 @@ HOST_NAME STATUS JL/U MAX NJOBS RUN SSUSP USUSP RSV
 作业列表要求客户端支持以下命令及字段：
 
 ```sh
-bjobs -a -noheader -o "jobid user stat queue exec_host job_name delimiter='|'"
+bjobs -a -noheader -o "jobid user stat queue exec_host job_name submit_time delimiter='|'"
 ```
 
 如果客户端不支持 `-o` 或这些字段，界面会显示错误，不会将其当作空列表。可在目标集群运行上述只读命令检查兼容性；本项目尚未在真实集群上验证。只有明确的 `No job found` / `No unfinished job found` 或成功的空输出会按空作业列表处理。

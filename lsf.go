@@ -16,7 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-const jobFormat = "jobid user stat queue exec_host job_name delimiter='|'"
+const jobFormat = "jobid user stat queue exec_host job_name submit_time delimiter='|'"
 
 type host struct {
 	name, status, max, jobs, running, suspended, reserved string
@@ -29,7 +29,7 @@ type host struct {
 }
 
 type job struct {
-	id, user, status, queue, host, name string
+	id, user, status, queue, host, name, submitted string
 }
 
 type commandSpec struct {
@@ -150,9 +150,9 @@ func parseJobs(text string) ([]job, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		// The free-text job name is last, so a literal delimiter in it is preserved.
-		f := strings.SplitN(line, "|", 6)
-		if len(f) != 6 {
+		// submit_time has no delimiter; a literal "|" stays in the job name.
+		f := strings.Split(line, "|")
+		if len(f) < 7 {
 			return nil, fmt.Errorf("bjobs 第 %d 行格式不支持：需要支持 -o 和 delimiter 的 LSF 客户端", i+1)
 		}
 		for n := range f {
@@ -161,7 +161,7 @@ func parseJobs(text string) ([]job, error) {
 		if err := validateJobID(f[0]); err != nil {
 			return nil, err
 		}
-		jobs = append(jobs, job{f[0], f[1], f[2], f[3], f[4], f[5]})
+		jobs = append(jobs, job{f[0], f[1], f[2], f[3], f[4], strings.TrimSpace(strings.Join(f[5:len(f)-1], "|")), f[len(f)-1]})
 	}
 	return jobs, nil
 }
@@ -221,6 +221,24 @@ func jobDetails(ctx context.Context, id string) (string, error) {
 	return out.stdout, err
 }
 
+func jobAction(id, action string) (commandSpec, error) {
+	if err := validateJobID(id); err != nil {
+		return commandSpec{}, err
+	}
+	name := map[string]string{"x": "bkill", "u": "bstop", "v": "bresume"}[action]
+	if name == "" {
+		return commandSpec{}, errors.New("只支持 bkill / bstop / bresume")
+	}
+	return commandSpec{name: name, args: []string{id}}, nil
+}
+
+func jobPeek(id string) (commandSpec, error) {
+	if err := validateJobID(id); err != nil {
+		return commandSpec{}, err
+	}
+	return commandSpec{name: "bpeek", args: []string{id}}, nil
+}
+
 func hostAction(name, action string) (commandSpec, error) {
 	if err := validateHost(name); err != nil {
 		return commandSpec{}, err
@@ -239,7 +257,7 @@ func sshCommand(name string) (*exec.Cmd, error) {
 }
 
 type submission struct {
-	host, queue, name, output, program, arguments string
+	host, queue, name, output, errorFile, slots, wall, program, arguments string
 }
 
 func parseArguments(text string) ([]string, error) {
@@ -279,13 +297,19 @@ func (s submission) command() (commandSpec, error) {
 	if err != nil {
 		return commandSpec{}, err
 	}
-	for _, value := range append([]string{s.name, s.output, s.program}, args...) {
+	for _, value := range append([]string{s.name, s.output, s.errorFile, s.program}, args...) {
 		if strings.ContainsFunc(value, unicode.IsControl) {
 			return commandSpec{}, errors.New("程序、参数、名称和路径不能包含换行或控制字符")
 		}
 	}
+	if s.slots != "" && !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(s.slots) {
+		return commandSpec{}, errors.New("槽位数必须是正整数")
+	}
+	if s.wall != "" && !regexp.MustCompile(`^([1-9][0-9]*|[0-9]+:[0-5][0-9]|[0-9]+:[0-9]+:[0-5][0-9])$`).MatchString(s.wall) {
+		return commandSpec{}, errors.New("时限用分钟或 [hour:]minute:second，例如 30 或 1:00")
+	}
 	spec := commandSpec{name: "bsub", args: []string{"-m", s.host}}
-	for _, opt := range [][2]string{{"-q", s.queue}, {"-J", s.name}, {"-o", s.output}} {
+	for _, opt := range [][2]string{{"-q", s.queue}, {"-J", s.name}, {"-o", s.output}, {"-e", s.errorFile}, {"-n", s.slots}, {"-W", s.wall}} {
 		if opt[1] == "" {
 			continue
 		}

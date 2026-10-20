@@ -115,7 +115,7 @@ func TestSubmissionPreviewCancellationAndSingleExecution(t *testing.T) {
 		t.Fatal("submission did not present target for review")
 	}
 	press(m, tea.KeyEscape)
-	if m.screen != formScreen || m.pending != nil || m.inputs[4].Value() != "/usr/bin/hostname" || !m.inputs[4].Focused() {
+	if m.screen != formScreen || m.pending != nil || m.inputs[7].Value() != "/usr/bin/hostname" || !m.inputs[7].Focused() {
 		t.Fatal("canceling preview lost the editable form")
 	}
 	if _, err := os.Stat(logFile); !errors.Is(err, os.ErrNotExist) {
@@ -161,6 +161,51 @@ func TestHostActionRequiresConfirmation(t *testing.T) {
 	press(m, 'y')
 	if m.screen != browseScreen {
 		t.Fatal("canceled action remained executable")
+	}
+}
+
+func TestJobActionConfirmsOnceAndPeekDoesNotConfirm(t *testing.T) {
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "calls")
+	t.Setenv("CALLS_FILE", logFile)
+	fakeCommands(t, map[string]string{
+		"bkill": "printf 'kill\n' >> \"$CALLS_FILE\"\nprintf 'Job <42> is being terminated'",
+		"bpeek": "printf 'peek\n' >> \"$CALLS_FILE\"\nprintf 'job output'",
+	})
+	m := newModel(context.Background())
+	m.Update(tea.KeyPressMsg{Code: '2'})
+	m.Update(listMsg{request: m.request, pane: jobsPane, jobs: []job{{id: "42", status: "RUN", name: "test"}}})
+	press(m, 'x')
+	if m.screen != confirmScreen || m.pending == nil || m.pending.name != "bkill" || m.pending.args[0] != "42" {
+		t.Fatal("bkill bypassed confirmation")
+	}
+	press(m, 'n')
+	if m.pending != nil {
+		t.Fatal("cancel kept the kill")
+	}
+	if _, err := os.Stat(logFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("cancel executed bkill")
+	}
+	press(m, 'x')
+	cmd := press(m, 'y')
+	if cmd == nil || m.screen != workingScreen {
+		t.Fatal("confirm did not run once")
+	}
+	if press(m, 'y') != nil {
+		t.Fatal("second y repeated bkill")
+	}
+	m.Update(cmd())
+	m.pane = jobsPane
+	m.detailTarget = "42"
+	m.screen = detailScreen
+	cmd = press(m, 'e')
+	if cmd == nil || m.screen != workingScreen || m.pending != nil {
+		t.Fatal("bpeek did not run as a read")
+	}
+	m.Update(cmd())
+	calls, err := os.ReadFile(logFile)
+	if err != nil || string(calls) != "kill\npeek\n" || !strings.Contains(m.View().Content, "job output") {
+		t.Fatalf("calls=%q err=%v", calls, err)
 	}
 }
 
