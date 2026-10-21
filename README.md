@@ -6,7 +6,7 @@
 
 需要已配置好的 LSF 客户端环境。启动前加载集群提供的环境脚本，确保 `bhosts` 和 `bjobs` 位于 `PATH` 中。
 
-从 [Releases](https://github.com/nirier/bubble-lsf/releases) 下载对应平台的压缩包，或用 Go 1.27.1 及以上从源码构建：
+从 [Releases](https://github.com/nirier/bubble-lsf/releases) 下载对应平台的压缩包。`linux-*-static` 以 `CGO_ENABLED=0` 静态链接，不依赖 glibc，用于旧系统或非 glibc 发行版。也可以用 Go 1.27.1 及以上从源码构建：
 
 ```sh
 go build -o bubble-lsf .

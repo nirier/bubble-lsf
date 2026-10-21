@@ -16,6 +16,12 @@ jobs:
             arch: amd64
           - os: linux
             arch: arm64
+          - os: linux
+            arch: amd64
+            static: "1"
+          - os: linux
+            arch: arm64
+            static: "1"
           - os: darwin
             arch: amd64
           - os: darwin
@@ -34,13 +40,27 @@ jobs:
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: ${{ matrix.static == '1' && '0' || '1' }}
         run: |
           ext=""
           [ "$GOOS" = windows ] && ext=".exe"
-          name="bubble-lsf-${GOOS}-${GOARCH}${ext}"
+          suffix=""
+          [ "${{ matrix.static }}" = 1 ] && suffix="-static"
+          name="bubble-lsf-${GOOS}-${GOARCH}${suffix}${ext}"
           go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o "$name" .
           # ponytail: only the native linux/amd64 binary runs here; other GOOS/GOARCH are cross-compiled.
-          [ "$GOOS-$GOARCH" = linux-amd64 ] && "./$name" -version
+          if [ "$GOOS-$GOARCH" = linux-amd64 ]; then
+            "./$name" -version
+            if [ "$suffix" = -static ]; then
+              file "$name" | grep -q 'statically linked'
+              if ldd "$name" >/tmp/ldd.out 2>&1; then
+                echo "static build linked dynamic libraries" >&2
+                cat /tmp/ldd.out >&2
+                exit 1
+              fi
+              grep -q 'not a dynamic executable' /tmp/ldd.out
+            fi
+          fi
           if [ "$GOOS" = windows ]; then
             zip "${name}.zip" "$name"
           else
@@ -48,7 +68,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: bubble-lsf-${{ matrix.os }}-${{ matrix.arch }}
+          name: bubble-lsf-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.static == '1' && '-static' || '' }}
           path: |
             bubble-lsf-*.tar.gz
             bubble-lsf-*.zip
